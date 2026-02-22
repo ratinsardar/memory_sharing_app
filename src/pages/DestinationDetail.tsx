@@ -1,6 +1,11 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
 import { destinations, difficultyColor } from "@/data/destinations";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
+import ReviewForm from "@/components/ReviewForm";
+import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Star, MapPin, Mountain, Clock, Sun, CloudRain, AlertTriangle,
@@ -9,7 +14,67 @@ import {
 
 const DestinationDetail = () => {
   const { id } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const dest = destinations.find((d) => d.id === id);
+  const [dbPlaceId, setDbPlaceId] = useState<string | null>(null);
+  const [dbReviews, setDbReviews] = useState<any[]>([]);
+  const [creatingPlace, setCreatingPlace] = useState(false);
+
+  const fetchDbData = useCallback(async () => {
+    if (!dest) return;
+    const { data } = await supabase
+      .from("places")
+      .select("id")
+      .eq("name", dest.name)
+      .eq("location", dest.location)
+      .maybeSingle();
+
+    if (data) {
+      setDbPlaceId(data.id);
+      const { data: revs } = await supabase
+        .from("reviews")
+        .select("*, profiles(display_name)")
+        .eq("place_id", data.id)
+        .order("created_at", { ascending: false });
+      setDbReviews(revs || []);
+    }
+  }, [dest]);
+
+  useEffect(() => { fetchDbData(); }, [fetchDbData]);
+
+  const ensureDbPlace = async () => {
+    if (dbPlaceId) return dbPlaceId;
+    if (!dest || !user) return null;
+    setCreatingPlace(true);
+
+    const { data } = await supabase.from("places").insert({
+      name: dest.name,
+      location: dest.location,
+      description: dest.description,
+      category: dest.category,
+      difficulty: dest.difficulty,
+      best_season: dest.bestSeason,
+      elevation: dest.elevation || null,
+      duration: dest.duration || null,
+      season_best: dest.seasonalInfo.best,
+      season_okay: dest.seasonalInfo.okay,
+      season_avoid: dest.seasonalInfo.avoid,
+      packing_essential: dest.packingList.essential,
+      packing_optional: dest.packingList.optional,
+      packing_avoid: dest.packingList.avoid,
+      safety_tips: dest.safetyTips,
+      image_urls: [dest.image],
+      user_id: user.id,
+    }).select("id").single();
+
+    setCreatingPlace(false);
+    if (data) {
+      setDbPlaceId(data.id);
+      return data.id;
+    }
+    return null;
+  };
 
   if (!dest) {
     return (
@@ -36,12 +101,8 @@ const DestinationDetail = () => {
               <ArrowLeft className="h-4 w-4" /> Back to Explore
             </Link>
             <div className="flex flex-wrap items-center gap-3 mb-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${difficultyColor[dest.difficulty]}`}>
-                {dest.difficulty}
-              </span>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-card/20 backdrop-blur-sm text-primary-foreground">
-                {dest.category}
-              </span>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${difficultyColor[dest.difficulty]}`}>{dest.difficulty}</span>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-card/20 backdrop-blur-sm text-primary-foreground">{dest.category}</span>
             </div>
             <h1 className="font-display text-4xl md:text-5xl font-bold text-primary-foreground mb-2">{dest.name}</h1>
             <div className="flex flex-wrap items-center gap-4 text-primary-foreground/80 text-sm">
@@ -55,7 +116,6 @@ const DestinationDetail = () => {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-10 space-y-10">
-        {/* Description */}
         <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-foreground text-lg leading-relaxed">{dest.description}</p>
         </motion.section>
@@ -67,24 +127,15 @@ const DestinationDetail = () => {
           </h2>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span className="font-semibold text-primary">Best Season</span>
-              </div>
+              <div className="flex items-center gap-2 mb-2"><CheckCircle2 className="h-5 w-5 text-primary" /><span className="font-semibold text-primary">Best Season</span></div>
               <p className="text-foreground text-sm leading-relaxed">{dest.seasonalInfo.best}</p>
             </div>
             <div className="bg-secondary/5 border border-secondary/20 rounded-lg p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <CloudRain className="h-5 w-5 text-secondary" />
-                <span className="font-semibold text-secondary">Okay Season</span>
-              </div>
+              <div className="flex items-center gap-2 mb-2"><CloudRain className="h-5 w-5 text-secondary" /><span className="font-semibold text-secondary">Okay Season</span></div>
               <p className="text-foreground text-sm leading-relaxed">{dest.seasonalInfo.okay}</p>
             </div>
             <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                <span className="font-semibold text-destructive">Avoid</span>
-              </div>
+              <div className="flex items-center gap-2 mb-2"><AlertTriangle className="h-5 w-5 text-destructive" /><span className="font-semibold text-destructive">Avoid</span></div>
               <p className="text-foreground text-sm leading-relaxed">{dest.seasonalInfo.avoid}</p>
             </div>
           </div>
@@ -97,43 +148,16 @@ const DestinationDetail = () => {
           </h2>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="bg-card rounded-lg p-5 shadow-card">
-              <h3 className="font-semibold text-primary mb-3 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" /> Essential
-              </h3>
-              <ul className="space-y-2">
-                {dest.packingList.essential.map((item) => (
-                  <li key={item} className="text-sm text-foreground flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+              <h3 className="font-semibold text-primary mb-3 flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Essential</h3>
+              <ul className="space-y-2">{dest.packingList.essential.map((item) => <li key={item} className="text-sm text-foreground flex items-start gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />{item}</li>)}</ul>
             </div>
             <div className="bg-card rounded-lg p-5 shadow-card">
-              <h3 className="font-semibold text-secondary mb-3 flex items-center gap-2">
-                <ThumbsUp className="h-4 w-4" /> Optional
-              </h3>
-              <ul className="space-y-2">
-                {dest.packingList.optional.map((item) => (
-                  <li key={item} className="text-sm text-foreground flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1.5 shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+              <h3 className="font-semibold text-secondary mb-3 flex items-center gap-2"><ThumbsUp className="h-4 w-4" /> Optional</h3>
+              <ul className="space-y-2">{dest.packingList.optional.map((item) => <li key={item} className="text-sm text-foreground flex items-start gap-2"><span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1.5 shrink-0" />{item}</li>)}</ul>
             </div>
             <div className="bg-card rounded-lg p-5 shadow-card">
-              <h3 className="font-semibold text-destructive mb-3 flex items-center gap-2">
-                <XCircle className="h-4 w-4" /> Avoid Bringing
-              </h3>
-              <ul className="space-y-2">
-                {dest.packingList.avoid.map((item) => (
-                  <li key={item} className="text-sm text-foreground flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-destructive mt-1.5 shrink-0" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+              <h3 className="font-semibold text-destructive mb-3 flex items-center gap-2"><XCircle className="h-4 w-4" /> Avoid Bringing</h3>
+              <ul className="space-y-2">{dest.packingList.avoid.map((item) => <li key={item} className="text-sm text-foreground flex items-start gap-2"><span className="w-1.5 h-1.5 rounded-full bg-destructive mt-1.5 shrink-0" />{item}</li>)}</ul>
             </div>
           </div>
         </motion.section>
@@ -146,9 +170,7 @@ const DestinationDetail = () => {
           <div className="bg-card rounded-lg p-6 shadow-card space-y-3">
             {dest.safetyTips.map((tip, i) => (
               <div key={i} className="flex items-start gap-3">
-                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">
-                  {i + 1}
-                </span>
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">{i + 1}</span>
                 <p className="text-foreground text-sm leading-relaxed">{tip}</p>
               </div>
             ))}
@@ -157,16 +179,62 @@ const DestinationDetail = () => {
 
         {/* Reviews */}
         <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-          <h2 className="font-display text-2xl font-bold text-foreground mb-5">
-            Community Reviews
-          </h2>
-          <div className="space-y-4">
+          <h2 className="font-display text-2xl font-bold text-foreground mb-5">Community Reviews</h2>
+
+          {/* Review Form */}
+          {dbPlaceId ? (
+            <ReviewForm placeId={dbPlaceId} onReviewAdded={fetchDbData} />
+          ) : user ? (
+            <div className="bg-card rounded-lg p-6 shadow-card text-center">
+              <p className="text-muted-foreground mb-3">Be the first to review this destination!</p>
+              <Button
+                disabled={creatingPlace}
+                onClick={async () => {
+                  const newId = await ensureDbPlace();
+                  if (newId) fetchDbData();
+                }}
+              >
+                {creatingPlace ? "Setting up..." : "Write a Review"}
+              </Button>
+            </div>
+          ) : (
+            <div className="bg-card rounded-lg p-6 shadow-card text-center">
+              <p className="text-muted-foreground mb-3">Log in to write a review</p>
+              <Button size="sm" onClick={() => navigate("/auth")}>Login</Button>
+            </div>
+          )}
+
+          {/* DB Reviews */}
+          {dbReviews.length > 0 && (
+            <div className="space-y-4 mt-6">
+              {dbReviews.map((review) => (
+                <div key={review.id} className="bg-card rounded-lg p-5 shadow-card">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                      {(review.profiles?.display_name || "U").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-card-foreground text-sm">{review.profiles?.display_name || "User"}</p>
+                      <p className="text-muted-foreground text-xs">{new Date(review.created_at).toLocaleDateString()}{review.visited_season && ` · ${review.visited_season}`}</p>
+                    </div>
+                    <div className="ml-auto flex items-center gap-1">
+                      {Array.from({ length: review.rating }).map((_, i) => (
+                        <Star key={i} className="h-3.5 w-3.5 fill-secondary text-secondary" />
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-foreground text-sm leading-relaxed">{review.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hardcoded reviews */}
+          <div className={`space-y-4 ${dbReviews.length > 0 ? "mt-4" : "mt-6"}`}>
             {dest.reviews.map((review) => (
               <div key={review.id} className="bg-card rounded-lg p-5 shadow-card">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                    {review.avatar}
-                  </div>
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">{review.avatar}</div>
                   <div>
                     <p className="font-semibold text-card-foreground text-sm">{review.author}</p>
                     <p className="text-muted-foreground text-xs">{review.date} · {review.visitedSeason}</p>
@@ -184,12 +252,9 @@ const DestinationDetail = () => {
         </motion.section>
       </div>
 
-      {/* Footer */}
       <footer className="border-t border-border py-10 px-4">
         <div className="max-w-5xl mx-auto text-center">
-          <p className="text-muted-foreground text-sm">
-            © 2026 TrailMate — Your smart travel companion.
-          </p>
+          <p className="text-muted-foreground text-sm">© 2026 TrailMate — Your smart travel companion.</p>
         </div>
       </footer>
     </div>

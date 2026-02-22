@@ -1,7 +1,8 @@
 import { useParams, Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
+import ReviewForm from "@/components/ReviewForm";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Star, MapPin, Mountain, Clock, Sun, CloudRain, AlertTriangle,
@@ -15,17 +16,17 @@ const PlaceDetail = () => {
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchPlace = async () => {
-      const { data } = await supabase.from("places").select("*").eq("id", id!).single();
-      setPlace(data);
+  const fetchData = useCallback(async () => {
+    if (!id) return;
+    const { data } = await supabase.from("places").select("*").eq("id", id).single();
+    setPlace(data);
 
-      const { data: revs } = await supabase.from("reviews").select("*, profiles(display_name)").eq("place_id", id!).order("created_at", { ascending: false });
-      setReviews(revs || []);
-      setLoading(false);
-    };
-    if (id) fetchPlace();
+    const { data: revs } = await supabase.from("reviews").select("*, profiles(display_name)").eq("place_id", id).order("created_at", { ascending: false });
+    setReviews(revs || []);
+    setLoading(false);
   }, [id]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   if (loading) {
     return (
@@ -168,8 +169,11 @@ const PlaceDetail = () => {
         {/* Reviews */}
         <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
           <h2 className="font-display text-2xl font-bold text-foreground mb-5">Community Reviews</h2>
+
+          <ReviewForm placeId={id!} onReviewAdded={fetchData} />
+
           {reviews.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-4 mt-6">
               {reviews.map((review) => (
                 <div key={review.id} className="bg-card rounded-lg p-5 shadow-card">
                   <div className="flex items-center gap-3 mb-3">
@@ -191,7 +195,7 @@ const PlaceDetail = () => {
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground text-center py-8">No reviews yet. Be the first to review!</p>
+            <p className="text-muted-foreground text-center py-8 mt-4">No reviews yet. Be the first to review!</p>
           )}
         </motion.section>
       </div>
